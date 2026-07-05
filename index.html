@@ -126,6 +126,8 @@ th{color:var(--sub);font-weight:600;text-align:left;padding:7px 4px;border-botto
 th.r,td.r{text-align:right}
 td{padding:7px 4px;border-bottom:1px solid var(--hair)}
 td.mono{font-family:var(--mono)}
+.t-edit{background:var(--ai-soft);color:var(--ai);border:none;border-radius:7px;padding:4px 10px;font-family:inherit;font-size:.72rem;font-weight:700;cursor:pointer}
+.edit-hint{font-size:.72rem;color:var(--sub);margin-top:8px;line-height:1.5}
 tr:last-child td{border-bottom:none}
 .memo-cap{font-size:.7rem;color:var(--sub);letter-spacing:.06em;margin:14px 0 6px;font-weight:700}
 .memo-cap.first{margin-top:14px}
@@ -352,6 +354,7 @@ html.dark .storage-warn{background:#2A2413;border-color:#5A4E22;color:#D8BD6A}
     <div class="opt-row"><div><div class="ol">スリープさせない</div><div class="od">計測中は画面が消えないようにします</div></div><div class="sw" id="swWake" onclick="togglePref('wakeLock')"></div></div>
     <div class="opt-row" style="border-bottom:none"><div><div class="ol">目標超過でアラーム</div><div class="od">各工程が目標を超えたらベルで知らせます（消音モードでも鳴ります）。タップで試聴。</div></div><div class="sw" id="swAlarm" onclick="togglePref('alarm')"></div></div>
   </div>
+  <p class="note" id="wakeHint" style="margin-top:8px"></p>
   <h2 class="sec">目標時間の設定（分）</h2>
   <div class="sum-card" id="settingsSummary"></div>
   <div class="list" style="padding:6px 16px" id="settingsList"></div>
@@ -543,22 +546,22 @@ function syncMemos(){
 function renderRunFull(){renderFuda();renderList();updateTotals();syncMemos();}
 
 /* ---------- 操作 ---------- */
-function startTask(){if(!active.startedAt)active.startedAt=new Date().toISOString();active.runningSince=Date.now();initAudio();acquireWake();persistActive();renderFuda();renderList();}
-function pauseTask(){active.taskAccum=curTaskSec();active.runningSince=null;releaseWake();persistActive();renderFuda();renderList();}
+function startTask(){if(!active.startedAt)active.startedAt=new Date().toISOString();active.runningSince=Date.now();initAudio();acquireWake();startKeepAlive();scheduleAlarm();persistActive();renderFuda();renderList();}
+function pauseTask(){active.taskAccum=curTaskSec();active.runningSince=null;cancelScheduledAlarm();stopKeepAlive();releaseWake();persistActive();renderFuda();renderList();}
 function completeTask(){
   active.records[active.idx]=Math.round(curTaskSec());
-  active.taskAccum=0;active.runningSince=null;releaseWake();alarmedIdx=-1;
+  active.taskAccum=0;active.runningSince=null;cancelScheduledAlarm();stopKeepAlive();releaseWake();
   if(active.idx<tasks.length)active.idx++;
   persistActive();renderRunFull();
 }
 function skipTask(){
-  active.taskAccum=0;active.runningSince=null;releaseWake();alarmedIdx=-1;
+  active.taskAccum=0;active.runningSince=null;cancelScheduledAlarm();stopKeepAlive();releaseWake();
   if(active.idx<tasks.length)active.idx++;
   persistActive();renderRunFull();
 }
 function selectPhase(i){
   if(i===active.idx)return;
-  function move(){active.taskAccum=0;active.runningSince=null;releaseWake();alarmedIdx=-1;active.idx=i;persistActive();renderRunFull();}
+  function move(){active.taskAccum=0;active.runningSince=null;cancelScheduledAlarm();stopKeepAlive();releaseWake();active.idx=i;persistActive();renderRunFull();}
   if(inProgress()){
     uiConfirm('計測中の時間があります。\n破棄して「'+tasks[i].name+'」に移りますか？','破棄して移る',true)
       .then(function(ok){if(ok)move();});
@@ -614,22 +617,51 @@ function renderHistory(){
   sessions.slice().reverse().forEach(function(s){
     var T=sessTotals(s),d=T.tot-T.tgt,full=(T.cnt===(s.tasksSnapshot||tasks).length);
     var rows='',cumAct=0;
-    s.records.forEach(function(r,i){if(r==null)return;cumAct+=r;var dd=r-T.snap[i].target*60;
-      rows+='<tr><td>'+CIRCLED[i]+' '+T.snap[i].name+'</td><td class="r mono">'+T.snap[i].target+'分</td>'
-        +'<td class="r mono">'+fmtMin(r)+'</td><td class="r mono '+(dd<=0?'df ok':'df ng')+'">'+(dd<=0?'−':'+')+fmtMin(Math.abs(dd))+'</td>'
-        +'<td class="r mono">'+fmtMin(cumAct)+'</td></tr>';});
+    T.snap.forEach(function(sn,i){
+      var r=s.records[i],cells;
+      if(r!=null){cumAct+=r;var dd=r-sn.target*60;
+        cells='<td class="r mono">'+fmtMin(r)+'</td><td class="r mono '+(dd<=0?'df ok':'df ng')+'">'+(dd<=0?'−':'+')+fmtMin(Math.abs(dd))+'</td><td class="r mono">'+fmtMin(cumAct)+'</td>';
+      }else{
+        cells='<td class="r mono" style="color:var(--sub2)">—</td><td class="r mono" style="color:var(--sub2)">—</td><td class="r mono" style="color:var(--sub2)">—</td>';
+      }
+      rows+='<tr><td>'+CIRCLED[i]+' '+sn.name+'</td><td class="r mono">'+sn.target+'分</td>'+cells
+        +'<td class="r"><button class="t-edit" onclick="editSessionTime('+s.n+','+i+')">修正</button></td></tr>';
+    });
     var pmemos='';
     (s.recordMemos||[]).forEach(function(m,i){if(m&&m.trim())pmemos+='<div class="pmemo"><span class="pl">'+CIRCLED[i]+' '+T.snap[i].name+'</span><br>'+escapeHtml(m.trim())+'</div>';});
-    html+='<div class="h-card"><div class="h-head" onclick="this.parentNode.classList.toggle(\'open\')">'
+    html+='<div class="h-card" id="hc'+s.n+'"><div class="h-head" onclick="this.parentNode.classList.toggle(\'open\')">'
       +'<div class="l"><div class="n">第'+s.n+'回<span class="badge '+(full?'full':'part')+'">'+(full?'通し':T.cnt+'工程')+'</span></div>'
       +'<div class="d">'+s.date+' '+(s.time||'')+'</div></div>'
       +'<div class="r"><div class="t mono">'+hms(T.tot)+'</div><div class="df '+(d<=0?'ok':'ng')+'">'+(d<=0?'目標より −':'目標より +')+fmtMin(Math.abs(d))+'</div></div></div>'
-      +'<div class="h-body"><table><tr><th>作業内容</th><th class="r">目標</th><th class="r">実施</th><th class="r">差</th><th class="r">実施積算</th></tr>'+rows+'</table>'
+      +'<div class="h-body"><table><tr><th>作業内容</th><th class="r">目標</th><th class="r">実施</th><th class="r">差</th><th class="r">積算</th><th></th></tr>'+rows+'</table>'
+      +'<div class="edit-hint">「修正」で計測時間を直せます（スタートし忘れた工程もここで入力できます）</div>'
       +(pmemos?'<div class="memo-cap first">工程ごとのメモ</div>'+pmemos:'')
       +(s.overallMemo?'<div class="memo-cap">全体メモ</div><div class="memo-block">'+escapeHtml(s.overallMemo)+'</div>':'')
       +'<button class="h-del" onclick="delSession('+s.n+')">この記録を削除</button></div></div>';
   });
   el.innerHTML=html;
+}
+function parseTimeInput(str){
+  str=(str||'').trim();
+  if(str==='')return {clear:true};
+  if(str.indexOf(':')>=0){var p=str.split(':');var mm=parseInt(p[0],10)||0,ss=parseInt(p[1],10)||0;if(ss<0||ss>=60)return null;return {sec:mm*60+ss};}
+  var n=parseFloat(str);if(isNaN(n)||n<0)return null;return {sec:Math.round(n*60)};
+}
+function editSessionTime(n,i){
+  var s=null;for(var k=0;k<sessions.length;k++){if(sessions[k].n===n){s=sessions[k];break;}}
+  if(!s)return;
+  var snap=s.tasksSnapshot||tasks,cur=s.records[i];
+  var label=CIRCLED[i]+' '+(snap[i]||{}).name+'（第'+n+'回）の実施時間';
+  uiEdit(label+'\n分:秒（例 12:30）または 分（例 12.5）で入力。空欄で記録を削除。',cur!=null?fmt(cur):'').then(function(v){
+    if(v===null)return;
+    var p=parseTimeInput(v);
+    if(p===null){uiAlert('入力の形式が正しくありません。\n「12:30」または「12.5」のように入力してください。');return;}
+    function apply(){save('sessions',sessions);renderHistory();buildPhaseSelect();updateTotals();var c=document.getElementById('hc'+n);if(c)c.classList.add('open');}
+    if(p.clear){
+      if(cur==null){return;}
+      uiConfirm('この工程の記録を削除しますか？','削除する',true).then(function(ok){if(ok){s.records[i]=null;apply();}});
+    }else{s.records[i]=p.sec;apply();}
+  });
 }
 function delSession(n){
   uiConfirm('第'+n+'回の記録を削除しますか？','削除する',true).then(function(ok){
@@ -920,10 +952,13 @@ document.querySelectorAll('nav button').forEach(function(b){b.onclick=function()
 /* ---------- 計測中の動作（スリープ防止・アラーム） ---------- */
 var prefs=load('prefs')||{wakeLock:true,alarm:true};
 function savePrefs(){save('prefs',prefs);}
-var wakeSentinel=null,audioCtx=null,alarmedIdx=-1;
+var wakeSentinel=null,audioCtx=null,keepAlive=null,alarmNodes=[];
 function acquireWake(){
   if(!prefs.wakeLock||!('wakeLock' in navigator))return;
-  try{navigator.wakeLock.request('screen').then(function(s){wakeSentinel=s;},function(){});}catch(e){}
+  try{navigator.wakeLock.request('screen').then(function(s){
+    wakeSentinel=s;
+    s.addEventListener('release',function(){wakeSentinel=null;if(active.runningSince&&document.visibilityState==='visible')acquireWake();});
+  },function(){});}catch(e){}
 }
 function releaseWake(){if(wakeSentinel){try{wakeSentinel.release();}catch(e){}wakeSentinel=null;}}
 function initAudio(){
@@ -932,47 +967,65 @@ function initAudio(){
   // iOSの消音スイッチを無視して鳴らす（対応端末のみ）
   try{if('audioSession' in navigator)navigator.audioSession.type='playback';}catch(e){}
 }
-function bell(){
+// 無音を鳴らし続けて音声セッションを保持（画面消灯でもアラームが鳴る可能性を上げる）
+function startKeepAlive(){
+  if(!audioCtx||keepAlive)return;
+  try{var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type='sine';o.frequency.value=60;g.gain.value=0.0006;
+    o.connect(g);g.connect(audioCtx.destination);o.start();keepAlive=o;}catch(e){}
+}
+function stopKeepAlive(){if(keepAlive){try{keepAlive.stop();}catch(e){}keepAlive=null;}}
+function bellAt(when,track){
   if(!audioCtx)return;
-  var t0=audioCtx.currentTime;
   var comp=audioCtx.createDynamicsCompressor();comp.connect(audioCtx.destination);
   var master=audioCtx.createGain();master.gain.value=0.85;master.connect(comp);
-  var base=1568; // 明るいベル
-  var partials=[1,2.02,2.99,4.17,5.43],pg=[1,0.55,0.42,0.3,0.2];
+  var base=1568,partials=[1,2.02,2.99,4.17,5.43],pg=[1,0.55,0.42,0.3,0.2];
   [0,0.26].forEach(function(off){   // チリン×2
     partials.forEach(function(mult,i){
       var o=audioCtx.createOscillator(),g=audioCtx.createGain();
       o.type='sine';o.frequency.value=base*mult;o.connect(g);g.connect(master);
-      var st=t0+off,peak=0.5*pg[i];
+      var st=when+off,peak=0.5*pg[i];
       g.gain.setValueAtTime(0.0001,st);
       g.gain.exponentialRampToValueAtTime(peak,st+0.004);
       g.gain.exponentialRampToValueAtTime(0.0001,st+1.5);
       o.start(st);o.stop(st+1.6);
+      if(track)alarmNodes.push(o);
     });
   });
 }
-function beep(){bell();}
-function checkAlarm(){
-  if(!prefs.alarm||!active.runningSince||active.idx>=tasks.length)return;
-  var tgt=tasks[active.idx].target*60;
-  if(tgt>0&&curTaskSec()>=tgt&&alarmedIdx!==active.idx){alarmedIdx=active.idx;beep();}
+function bell(){if(audioCtx)bellAt(audioCtx.currentTime,false);}
+function cancelScheduledAlarm(){alarmNodes.forEach(function(o){try{o.stop();}catch(e){}});alarmNodes=[];}
+// 目標到達時刻に音声クロック上でアラームを予約（画面消灯に強い）
+function scheduleAlarm(){
+  cancelScheduledAlarm();
+  if(!prefs.alarm||!audioCtx||!active.runningSince||active.idx>=tasks.length)return;
+  var tgt=tasks[active.idx].target*60,rem=tgt-curTaskSec();
+  if(tgt>0&&rem>0)bellAt(audioCtx.currentTime+rem,true);
 }
 function togglePref(k){
   prefs[k]=!prefs[k];savePrefs();renderPrefs();
   if(k==='wakeLock'){if(prefs.wakeLock&&active.runningSince)acquireWake();else if(!prefs.wakeLock)releaseWake();}
-  if(k==='alarm'&&prefs.alarm){initAudio();bell();}
+  if(k==='alarm'){if(prefs.alarm){initAudio();bell();scheduleAlarm();}else cancelScheduledAlarm();}
 }
 function renderPrefs(){
-  var w=document.getElementById('swWake'),a=document.getElementById('swAlarm');
+  var w=document.getElementById('swWake'),a=document.getElementById('swAlarm'),h=document.getElementById('wakeHint');
   if(w)w.classList.toggle('on',prefs.wakeLock);
   if(a)a.classList.toggle('on',prefs.alarm);
+  if(h){
+    var sup=('wakeLock' in navigator);
+    h.innerHTML='確実にスリープを防ぐには、端末側で <b>設定 → 画面表示と明るさ → 自動ロック →「なし」</b> にするのが最も確実です（低電力モードはオフに）。'
+      +(sup?'':'<br>※お使いのブラウザはアプリからの画面維持に対応していないため、上記の端末設定が必要です。');
+  }
 }
 
 /* ---------- 起動 ---------- */
 buildPhaseSelect();renderRunFull();renderPrefs();
-setInterval(function(){if(active.runningSince){renderFuda();updateTotals();checkAlarm();}},500);
+setInterval(function(){if(active.runningSince){renderFuda();updateTotals();}},500);
 document.addEventListener('visibilitychange',function(){
-  if(document.visibilityState==='visible'){renderFuda();if(active.runningSince)acquireWake();}
+  if(document.visibilityState==='visible'){
+    renderFuda();updateTotals();
+    if(active.runningSince){acquireWake();if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();scheduleAlarm();}
+  }
   persistActive();
 });
 </script>
@@ -980,7 +1033,14 @@ document.addEventListener('visibilitychange',function(){
 /* PWA: サービスワーカー登録（オフライン動作・インストール用） */
 if('serviceWorker' in navigator){
   window.addEventListener('load',function(){
-    navigator.serviceWorker.register('./sw.js').catch(function(){});
+    navigator.serviceWorker.register('./sw.js').then(function(reg){
+      reg.update();
+      setInterval(function(){reg.update();},60*60*1000);
+    }).catch(function(){});
+  });
+  var swRefreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',function(){
+    if(swRefreshing)return;swRefreshing=true;location.reload();
   });
 }
 </script>
