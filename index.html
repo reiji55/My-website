@@ -126,7 +126,12 @@ th{color:var(--sub);font-weight:600;text-align:left;padding:7px 4px;border-botto
 th.r,td.r{text-align:right}
 td{padding:7px 4px;border-bottom:1px solid var(--hair)}
 td.mono{font-family:var(--mono)}
-.t-edit{background:var(--ai-soft);color:var(--ai);border:none;border-radius:7px;padding:4px 10px;font-family:inherit;font-size:.72rem;font-weight:700;cursor:pointer}
+.edit-bar{display:flex;justify-content:flex-end;gap:8px;margin:2px 0 8px}
+.eb-edit{background:var(--ai-soft);color:var(--ai);border:none;border-radius:9px;padding:7px 18px;font-family:inherit;font-size:.8rem;font-weight:700;cursor:pointer}
+.eb-save{background:var(--ai);color:#fff;border:none;border-radius:9px;padding:7px 20px;font-family:inherit;font-size:.8rem;font-weight:700;cursor:pointer}
+.eb-cancel{background:none;color:var(--sub);border:none;font-family:inherit;font-size:.8rem;font-weight:600;cursor:pointer;padding:7px 8px}
+.te-in{width:82px;padding:7px 8px;border:1px solid var(--ai);border-radius:8px;font-family:var(--mono);font-size:.86rem;text-align:right;background:var(--card);color:var(--ink)}
+.te-in:focus{outline:2px solid var(--ai);border-color:transparent}
 .edit-hint{font-size:.72rem;color:var(--sub);margin-top:8px;line-height:1.5}
 tr:last-child td{border-bottom:none}
 .memo-cap{font-size:.7rem;color:var(--sub);letter-spacing:.06em;margin:14px 0 6px;font-weight:700}
@@ -159,6 +164,8 @@ tr:last-child td{border-bottom:none}
 .pe .m{margin-top:9px;font-size:.86rem;line-height:1.6;white-space:pre-wrap;color:var(--ink)}
 .pe .m.none{color:var(--sub2);opacity:.8}
 .pe .m .src{font-size:.68rem;color:var(--sub);letter-spacing:.03em}
+.pe-editbar{display:flex;justify-content:flex-end;margin-top:8px}
+.pe-edit{background:var(--ai-soft);color:var(--ai);border:none;border-radius:8px;padding:5px 14px;font-family:inherit;font-size:.74rem;font-weight:700;cursor:pointer}
 
 /* ===== メモ一覧 ===== */
 .memo-actions{display:flex;gap:8px;align-items:stretch;margin:2px 0 16px}
@@ -275,6 +282,7 @@ html.dark{
 html.dark .fuda .task .serif{color:var(--ai)}
 html.dark .b-done,html.dark .b-start{background:var(--ai);color:#0F1620}
 html.dark .fuda .b-main{background:var(--ai);color:#0F1620;box-shadow:none}
+html.dark .eb-save{color:#0F1620}
 html.dark .b-pause,html.dark .b-skip{background:transparent;color:var(--ai)}
 html.dark .bar{background:#2A303A}
 html.dark .seg,html.dark .seg.mini2{background:#242A33}
@@ -348,7 +356,7 @@ html.dark .storage-warn{background:#2A2413;border-color:#5A4E22;color:#D8BD6A}
     <button data-theme="light" onclick="setTheme('light')">ライト</button>
     <button data-theme="dark" onclick="setTheme('dark')">ダーク</button>
   </div>
-  <p class="note" style="margin-top:4px">「自動」は端末の設定に追従します。確定デザイン（和紙の白）で見たいときは「ライト」を選んでください。</p>
+  <p class="note" style="margin-top:4px">「自動」は端末の設定に追従します。</p>
   <h2 class="sec">計測中の動作</h2>
   <div class="list" style="padding:2px 16px">
     <div class="opt-row"><div><div class="ol">スリープさせない</div><div class="od">計測中は画面が消えないようにします</div></div><div class="sw" id="swWake" onclick="togglePref('wakeLock')"></div></div>
@@ -610,34 +618,44 @@ document.getElementById('resetBtn').onclick=function(){
 function sessTotals(s){var snap=s.tasksSnapshot||tasks,tot=0,tgt=0,cnt=0;
   s.records.forEach(function(r,i){if(r!=null){tot+=r;tgt+=snap[i].target*60;cnt++;}});
   return {tot:tot,tgt:tgt,cnt:cnt,snap:snap};}
+var editingSession=null;
 function renderHistory(){
   var el=document.getElementById('histSession');
   if(!sessions.length){el.innerHTML='<div class="empty">まだ記録がありません。<br>「練習」タブからタイムを計ってみましょう。</div>';return;}
   var html='';
   sessions.slice().reverse().forEach(function(s){
     var T=sessTotals(s),d=T.tot-T.tgt,full=(T.cnt===(s.tasksSnapshot||tasks).length);
-    var rows='',cumAct=0;
+    var editing=(editingSession===s.n),rows='',cumAct=0;
     T.snap.forEach(function(sn,i){
-      var r=s.records[i],cells;
-      if(r!=null){cumAct+=r;var dd=r-sn.target*60;
-        cells='<td class="r mono">'+fmtMin(r)+'</td><td class="r mono '+(dd<=0?'df ok':'df ng')+'">'+(dd<=0?'−':'+')+fmtMin(Math.abs(dd))+'</td><td class="r mono">'+fmtMin(cumAct)+'</td>';
+      var r=s.records[i];
+      if(editing){
+        rows+='<tr><td>'+CIRCLED[i]+' '+sn.name+'</td><td class="r mono">'+sn.target+'分</td>'
+          +'<td class="r"><input class="te-in mono" data-i="'+i+'" inputmode="numeric" placeholder="—" value="'+(r!=null?fmt(r):'')+'"></td></tr>';
       }else{
-        cells='<td class="r mono" style="color:var(--sub2)">—</td><td class="r mono" style="color:var(--sub2)">—</td><td class="r mono" style="color:var(--sub2)">—</td>';
+        var cells;
+        if(r!=null){cumAct+=r;var dd=r-sn.target*60;
+          cells='<td class="r mono">'+fmtMin(r)+'</td><td class="r mono '+(dd<=0?'df ok':'df ng')+'">'+(dd<=0?'−':'+')+fmtMin(Math.abs(dd))+'</td><td class="r mono">'+fmtMin(cumAct)+'</td>';
+        }else{cells='<td class="r mono" style="color:var(--sub2)">—</td><td class="r mono" style="color:var(--sub2)">—</td><td class="r mono" style="color:var(--sub2)">—</td>';}
+        rows+='<tr><td>'+CIRCLED[i]+' '+sn.name+'</td><td class="r mono">'+sn.target+'分</td>'+cells+'</tr>';
       }
-      rows+='<tr><td>'+CIRCLED[i]+' '+sn.name+'</td><td class="r mono">'+sn.target+'分</td>'+cells
-        +'<td class="r"><button class="t-edit" onclick="editSessionTime('+s.n+','+i+')">修正</button></td></tr>';
     });
+    var thead=editing?'<tr><th>作業内容</th><th class="r">目標</th><th class="r">実施（分:秒）</th></tr>'
+      :'<tr><th>作業内容</th><th class="r">目標</th><th class="r">実施</th><th class="r">差</th><th class="r">積算</th></tr>';
+    var editBar=editing
+      ?'<div class="edit-bar"><button class="eb-cancel" onclick="cancelEditSession()">やめる</button><button class="eb-save" onclick="saveSessionEdits('+s.n+')">保存</button></div>'
+      :'<div class="edit-bar"><button class="eb-edit" onclick="enterEditSession('+s.n+')">修正</button></div>';
     var pmemos='';
     (s.recordMemos||[]).forEach(function(m,i){if(m&&m.trim())pmemos+='<div class="pmemo"><span class="pl">'+CIRCLED[i]+' '+T.snap[i].name+'</span><br>'+escapeHtml(m.trim())+'</div>';});
-    html+='<div class="h-card" id="hc'+s.n+'"><div class="h-head" onclick="this.parentNode.classList.toggle(\'open\')">'
+    html+='<div class="h-card'+(editing?' open':'')+'" id="hc'+s.n+'"><div class="h-head" '+(editing?'':'onclick="this.parentNode.classList.toggle(\'open\')"')+'>'
       +'<div class="l"><div class="n">第'+s.n+'回<span class="badge '+(full?'full':'part')+'">'+(full?'通し':T.cnt+'工程')+'</span></div>'
       +'<div class="d">'+s.date+' '+(s.time||'')+'</div></div>'
       +'<div class="r"><div class="t mono">'+hms(T.tot)+'</div><div class="df '+(d<=0?'ok':'ng')+'">'+(d<=0?'目標より −':'目標より +')+fmtMin(Math.abs(d))+'</div></div></div>'
-      +'<div class="h-body"><table><tr><th>作業内容</th><th class="r">目標</th><th class="r">実施</th><th class="r">差</th><th class="r">積算</th><th></th></tr>'+rows+'</table>'
-      +'<div class="edit-hint">「修正」で計測時間を直せます（スタートし忘れた工程もここで入力できます）</div>'
+      +'<div class="h-body">'+editBar+'<table>'+thead+rows+'</table>'
+      +(editing?'<div class="edit-hint">変えたい実施時間をタップして入力。「12:30」または「12.5」（分）で入力できます。空欄にすると記録を削除します。</div>':'')
       +(pmemos?'<div class="memo-cap first">工程ごとのメモ</div>'+pmemos:'')
       +(s.overallMemo?'<div class="memo-cap">全体メモ</div><div class="memo-block">'+escapeHtml(s.overallMemo)+'</div>':'')
-      +'<button class="h-del" onclick="delSession('+s.n+')">この記録を削除</button></div></div>';
+      +(editing?'':'<button class="h-del" onclick="delSession('+s.n+')">この記録を削除</button>')
+      +'</div></div>';
   });
   el.innerHTML=html;
 }
@@ -647,20 +665,19 @@ function parseTimeInput(str){
   if(str.indexOf(':')>=0){var p=str.split(':');var mm=parseInt(p[0],10)||0,ss=parseInt(p[1],10)||0;if(ss<0||ss>=60)return null;return {sec:mm*60+ss};}
   var n=parseFloat(str);if(isNaN(n)||n<0)return null;return {sec:Math.round(n*60)};
 }
-function editSessionTime(n,i){
-  var s=null;for(var k=0;k<sessions.length;k++){if(sessions[k].n===n){s=sessions[k];break;}}
-  if(!s)return;
-  var snap=s.tasksSnapshot||tasks,cur=s.records[i];
-  var label=CIRCLED[i]+' '+(snap[i]||{}).name+'（第'+n+'回）の実施時間';
-  uiEdit(label+'\n分:秒（例 12:30）または 分（例 12.5）で入力。空欄で記録を削除。',cur!=null?fmt(cur):'').then(function(v){
-    if(v===null)return;
-    var p=parseTimeInput(v);
-    if(p===null){uiAlert('入力の形式が正しくありません。\n「12:30」または「12.5」のように入力してください。');return;}
-    function apply(){save('sessions',sessions);renderHistory();buildPhaseSelect();updateTotals();var c=document.getElementById('hc'+n);if(c)c.classList.add('open');}
-    if(p.clear){
-      if(cur==null){return;}
-      uiConfirm('この工程の記録を削除しますか？','削除する',true).then(function(ok){if(ok){s.records[i]=null;apply();}});
-    }else{s.records[i]=p.sec;apply();}
+function reopenCard(n){var c=document.getElementById('hc'+n);if(c)c.classList.add('open');}
+function enterEditSession(n){editingSession=n;renderHistory();}
+function cancelEditSession(){var n=editingSession;editingSession=null;renderHistory();reopenCard(n);}
+function saveSessionEdits(n){
+  var inputs=document.querySelectorAll('#hc'+n+' .te-in'),parsed=[],bad=false;
+  inputs.forEach(function(inp){var p=parseTimeInput(inp.value);if(p===null)bad=true;parsed.push({i:+inp.dataset.i,p:p});});
+  if(bad){uiAlert('入力の形式が正しくありません。\n「12:30」または「12.5」のように入力してください。');return;}
+  uiConfirm('この内容で保存しますか？','保存する').then(function(ok){
+    if(!ok)return;
+    var s=null;for(var k=0;k<sessions.length;k++){if(sessions[k].n===n){s=sessions[k];break;}}
+    if(!s)return;
+    parsed.forEach(function(x){s.records[x.i]=x.p.clear?null:x.p.sec;});
+    save('sessions',sessions);editingSession=null;renderHistory();buildPhaseSelect();updateTotals();reopenCard(n);
   });
 }
 function delSession(n){
@@ -704,6 +721,7 @@ function barChart(data,target){
   return svg+'</svg>';
 }
 function renderPhaseCompare(i){
+  comparePhase=i;
   var body=document.getElementById('phaseCompareBody'),d=phaseData(i),t=tasks[i];
   if(!d.length){body.innerHTML='<div class="empty">この工程（'+CIRCLED[i]+' '+t.name+'）の記録はまだありません。<br>練習タブで工程名をタップして計ってみましょう。</div>';return;}
   var secs=d.map(function(x){return x.sec;});
@@ -720,14 +738,15 @@ function renderPhaseCompare(i){
     var memoHtml;
     if(x.memo)memoHtml='<div class="m">'+escapeHtml(x.memo)+'</div>';
     else if(x.overall)memoHtml='<div class="m"><span class="src">全体メモ：</span> '+escapeHtml(x.overall)+'</div>';
-    else memoHtml='<div class="m none">（メモなし）</div>';
+    else memoHtml='<div class="m none">（この工程のメモなし）</div>';
     html+='<div class="pe"><div class="top"><span><span class="nn">第'+x.n+'回</span><span class="dd">'+x.date+'</span></span>'
       +'<span class="tt mono">'+fmtMin(x.sec)+'<span class="bd '+(df<=0?'df ok':'df ng')+'">'+(df<=0?'−':'+')+fmtMin(Math.abs(df))+'</span></span></div>'
-      +memoHtml+'</div>';
+      +memoHtml
+      +'<div class="pe-editbar"><button class="pe-edit" onclick="editMemo('+x.n+','+i+')">メモを編集</button></div></div>';
   });
   body.innerHTML=html;
 }
-var histMode='session', memoMode='phase';
+var histMode='session', memoMode='phase', comparePhase=0;
 function setHistMode(m){histMode=m;
   document.getElementById('segSession').classList.toggle('on',m==='session');
   document.getElementById('segPhase').classList.toggle('on',m==='phase');
@@ -800,6 +819,10 @@ function memoGroup(title,items,overall){
   });
   return h+'</div>';
 }
+function rerenderMemoViews(){
+  if(histMode==='memo')renderMemoDigest(memoMode);
+  else if(histMode==='phase')renderPhaseCompare(comparePhase);
+}
 function editMemo(n,i){
   var s=null;for(var k=0;k<sessions.length;k++){if(sessions[k].n===n){s=sessions[k];break;}}
   if(!s)return;
@@ -811,11 +834,13 @@ function editMemo(n,i){
     if(v===cur)return;                  // 変更なし
     function apply(val){
       if(i===-1)s.overallMemo=val;else s.recordMemos[i]=val;
-      save('sessions',sessions);renderMemoDigest(memoMode);
+      save('sessions',sessions);rerenderMemoViews();
     }
     if(!v.trim()){
       uiConfirm('このメモを空にすると一覧から消えます。\n削除してもよいですか？','削除する',true).then(function(ok){if(ok)apply('');});
-    }else apply(v);
+    }else{
+      uiConfirm('この内容で保存しますか？','保存する').then(function(ok){if(ok)apply(v);});
+    }
   });
 }
 function buildMemoText(){
