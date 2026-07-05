@@ -183,6 +183,20 @@ tr:last-child td{border-bottom:none}
 .mnote .meta .ph .serif{font-weight:700}
 .mnote .meta .m-edit{margin-left:auto;background:var(--ai-soft);color:var(--ai);border:none;border-radius:8px;padding:4px 12px;font-family:inherit;font-size:.72rem;font-weight:700;cursor:pointer}
 .mnote .txt{font-size:.9rem;line-height:1.65;white-space:pre-wrap;color:var(--ink)}
+.memo-hint{font-size:.72rem;color:var(--sub);margin:0 2px 10px}
+.mg-acc{background:var(--card);border:1px solid var(--cardline);border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:var(--shadow)}
+.mg-acc .mg-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:13px 15px;margin:0;border:none;border-bottom:1px solid transparent;cursor:pointer}
+.mg-acc.open .mg-head{border-bottom-color:var(--hair)}
+.mg-acc .mh-lbl{font-weight:700;font-size:.96rem}
+.mg-acc .mh-lbl .serif{color:var(--ai);font-weight:700}
+.mg-acc.overall .mh-lbl{color:var(--gold-d)}
+.mg-acc .mh-right{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.mg-acc .mh-cnt{font-size:.72rem;color:var(--sub);font-weight:600}
+.mg-acc .chev{color:var(--sub2);font-size:.72rem;transition:transform .2s}
+.mg-acc.open .chev{transform:rotate(180deg)}
+.mg-body{display:none;padding:11px 12px 12px}
+.mg-acc.open .mg-body{display:block}
+.mg-body .mnote{box-shadow:none;border-color:var(--hair)}
 
 /* ===== プレビュー ===== */
 #previewWrap{position:fixed;inset:0;background:rgba(10,12,16,.6);display:none;flex-direction:column;z-index:90}
@@ -775,50 +789,55 @@ function collectMemos(){
   });
   return out;
 }
+var memoOpen={};
 function renderMemoDigest(mode){
   memoMode=mode;
   document.getElementById('mByPhase').classList.toggle('on',mode==='phase');
   document.getElementById('mByDate').classList.toggle('on',mode==='date');
   var body=document.getElementById('memoDigestBody'),all=collectMemos();
   if(!all.length){body.innerHTML='<div class="empty">まだメモがありません。<br>練習中に「このフェーズのメモ」や「全体メモ」に気づきを書くと、ここに集まります。</div>';return;}
-  var html='';
+  var html='<div class="memo-hint">見出しをタップで開閉できます</div>';
   if(mode==='phase'){
     for(var i=0;i<tasks.length;i++){
       var items=all.filter(function(x){return x.i===i;});
       if(!items.length)continue;
-      html+=memoGroup(CIRCLED[i]+' '+tasks[i].name,items,false);
+      var notes=items.slice().reverse().map(function(x){return memoNote(x,false);}).join('');
+      html+=memoAccordion('p'+i,'<span class="serif">'+CIRCLED[i]+'</span> '+tasks[i].name,'',items.length,notes,false);
     }
     var ov=all.filter(function(x){return x.i===-1;});
-    if(ov.length)html+=memoGroup('全体メモ',ov,true);
+    if(ov.length){
+      var onotes=ov.slice().reverse().map(function(x){return memoNote(x,false);}).join('');
+      html+=memoAccordion('p-1','全体メモ','',ov.length,onotes,true);
+    }
   }else{
-    // 日付ごと（新しい回が上）
     var byN={},order=[];
     all.forEach(function(x){if(!byN[x.n]){byN[x.n]=[];order.push(x.n);}byN[x.n].push(x);});
     order.sort(function(a,b){return b-a;});
     order.forEach(function(n){
-      var items=byN[n],d=items[0].date;
-      html+='<div class="mg-group"><div class="mg-head"><span class="mh-lbl">第'+n+'回</span><span class="mh-cnt">'+d+'</span></div>';
-      items.forEach(function(x){
-        var lbl=x.i===-1?'全体メモ':'<span class="serif">'+CIRCLED[x.i]+'</span> '+x.name;
-        html+='<div class="mnote'+(x.i===-1?' ov':'')+'"><div class="meta"><span class="ph">'+lbl+'</span>'
-          +'<button class="m-edit" onclick="editMemo('+x.n+','+x.i+')">編集</button></div><div class="txt">'+escapeHtml(x.text)+'</div></div>';
-      });
-      html+='</div>';
+      var items=byN[n];
+      var notes=items.map(function(x){return memoNote(x,true);}).join('');
+      html+=memoAccordion('n'+n,'第'+n+'回',items[0].date,items.length,notes,false);
     });
   }
   body.innerHTML=html;
 }
-function memoGroup(title,items,overall){
-  var h='<div class="mg-group"><div class="mg-head'+(overall?' overall':'')+'">'
-    +'<span class="mh-lbl">'+(overall?title:'<span class="serif">'+title.split(' ')[0]+'</span> '+title.split(' ').slice(1).join(' '))+'</span>'
-    +'<span class="mh-cnt">'+items.length+'件</span></div>';
-  items.slice().reverse().forEach(function(x){
-    h+='<div class="mnote'+(overall?' ov':'')+'"><div class="meta"><span>'+x.date+'</span><span>第'+x.n+'回</span>'
-      +'<button class="m-edit" onclick="editMemo('+x.n+','+x.i+')">編集</button></div>'
-      +'<div class="txt">'+escapeHtml(x.text)+'</div></div>';
-  });
-  return h+'</div>';
+function memoNote(x,showPhaseLabel){
+  var meta=showPhaseLabel
+    ?'<span class="ph">'+(x.i===-1?'全体メモ':'<span class="serif">'+CIRCLED[x.i]+'</span> '+x.name)+'</span>'
+    :'<span>'+x.date+'</span><span>第'+x.n+'回</span>';
+  return '<div class="mnote'+(x.i===-1?' ov':'')+'"><div class="meta">'+meta
+    +'<button class="m-edit" onclick="editMemo('+x.n+','+x.i+')">編集</button></div>'
+    +'<div class="txt">'+escapeHtml(x.text)+'</div></div>';
 }
+function memoAccordion(key,labelHTML,subHTML,count,notesHTML,overall){
+  var open=!!memoOpen[key];
+  return '<div class="mg-acc'+(open?' open':'')+(overall?' overall':'')+'" data-key="'+key+'">'
+    +'<div class="mg-head" onclick="toggleMemoGroup(this)">'
+    +'<span class="mh-lbl">'+labelHTML+'</span>'
+    +'<span class="mh-right"><span class="mh-cnt">'+(subHTML?subHTML+' ・ ':'')+count+'件</span><span class="chev">▾</span></span>'
+    +'</div><div class="mg-body">'+notesHTML+'</div></div>';
+}
+function toggleMemoGroup(head){var acc=head.parentNode;memoOpen[acc.dataset.key]=acc.classList.toggle('open');}
 function rerenderMemoViews(){
   if(histMode==='memo')renderMemoDigest(memoMode);
   else if(histMode==='phase')renderPhaseCompare(comparePhase);
