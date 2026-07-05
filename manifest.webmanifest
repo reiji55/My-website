@@ -1,0 +1,18 @@
+{
+  "name": "2級壁装技能検定 実技タイマー",
+  "short_name": "実技タイマー",
+  "description": "2級壁装技能検定の実技試験に向けた、工程ごとの時間配分を計測・記録する練習用タイマー。",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F1EFE8",
+  "theme_color": "#24486E",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
