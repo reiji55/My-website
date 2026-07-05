@@ -184,19 +184,18 @@ tr:last-child td{border-bottom:none}
 .mnote .meta .m-edit{margin-left:auto;background:var(--ai-soft);color:var(--ai);border:none;border-radius:8px;padding:4px 12px;font-family:inherit;font-size:.72rem;font-weight:700;cursor:pointer}
 .mnote .txt{font-size:.9rem;line-height:1.65;white-space:pre-wrap;color:var(--ink)}
 .memo-hint{font-size:.72rem;color:var(--sub);margin:0 2px 10px}
-.mg-acc{background:var(--card);border:1px solid var(--cardline);border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:var(--shadow)}
-.mg-acc .mg-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:13px 15px;margin:0;border:none;border-bottom:1px solid transparent;cursor:pointer}
-.mg-acc.open .mg-head{border-bottom-color:var(--hair)}
-.mg-acc .mh-lbl{font-weight:700;font-size:.96rem}
+.mg-acc{margin-bottom:20px}
+.mg-acc .mg-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin:0 2px 0;padding-bottom:7px;border-bottom:2px solid var(--ai);cursor:pointer}
+.mg-acc.overall .mg-head{border-bottom-color:var(--gold)}
+.mg-acc .mh-lbl{font-weight:700;font-size:1rem;color:var(--ink)}
 .mg-acc .mh-lbl .serif{color:var(--ai);font-weight:700}
 .mg-acc.overall .mh-lbl{color:var(--gold-d)}
 .mg-acc .mh-right{display:flex;align-items:center;gap:9px;flex-shrink:0}
 .mg-acc .mh-cnt{font-size:.72rem;color:var(--sub);font-weight:600}
 .mg-acc .chev{color:var(--sub2);font-size:.72rem;transition:transform .2s}
 .mg-acc.open .chev{transform:rotate(180deg)}
-.mg-body{display:none;padding:11px 12px 12px;background:var(--bg)}
+.mg-body{display:none;padding-top:10px}
 .mg-acc.open .mg-body{display:block}
-.mg-body .mnote{box-shadow:none}
 
 /* ===== プレビュー ===== */
 #previewWrap{position:fixed;inset:0;background:rgba(10,12,16,.6);display:none;flex-direction:column;z-index:90}
