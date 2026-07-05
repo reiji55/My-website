@@ -350,7 +350,7 @@ html.dark .storage-warn{background:#2A2413;border-color:#5A4E22;color:#D8BD6A}
   <h2 class="sec">計測中の動作</h2>
   <div class="list" style="padding:2px 16px">
     <div class="opt-row"><div><div class="ol">スリープさせない</div><div class="od">計測中は画面が消えないようにします</div></div><div class="sw" id="swWake" onclick="togglePref('wakeLock')"></div></div>
-    <div class="opt-row" style="border-bottom:none"><div><div class="ol">目標超過でアラーム</div><div class="od">各工程が目標時間を超えたら音で知らせます</div></div><div class="sw" id="swAlarm" onclick="togglePref('alarm')"></div></div>
+    <div class="opt-row" style="border-bottom:none"><div><div class="ol">目標超過でアラーム</div><div class="od">各工程が目標を超えたらベルで知らせます（消音モードでも鳴ります）。タップで試聴。</div></div><div class="sw" id="swAlarm" onclick="togglePref('alarm')"></div></div>
   </div>
   <h2 class="sec">目標時間の設定（分）</h2>
   <div class="sum-card" id="settingsSummary"></div>
@@ -929,18 +929,29 @@ function releaseWake(){if(wakeSentinel){try{wakeSentinel.release();}catch(e){}wa
 function initAudio(){
   if(!audioCtx){try{audioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
   if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();
+  // iOSの消音スイッチを無視して鳴らす（対応端末のみ）
+  try{if('audioSession' in navigator)navigator.audioSession.type='playback';}catch(e){}
 }
-function beep(){
-  if(!audioCtx)return;var now=audioCtx.currentTime;
-  [0,0.2,0.4].forEach(function(off){
-    var o=audioCtx.createOscillator(),g=audioCtx.createGain();
-    o.type='sine';o.frequency.value=880;o.connect(g);g.connect(audioCtx.destination);
-    g.gain.setValueAtTime(0.0001,now+off);
-    g.gain.exponentialRampToValueAtTime(0.35,now+off+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001,now+off+0.16);
-    o.start(now+off);o.stop(now+off+0.18);
+function bell(){
+  if(!audioCtx)return;
+  var t0=audioCtx.currentTime;
+  var comp=audioCtx.createDynamicsCompressor();comp.connect(audioCtx.destination);
+  var master=audioCtx.createGain();master.gain.value=0.85;master.connect(comp);
+  var base=1568; // 明るいベル
+  var partials=[1,2.02,2.99,4.17,5.43],pg=[1,0.55,0.42,0.3,0.2];
+  [0,0.26].forEach(function(off){   // チリン×2
+    partials.forEach(function(mult,i){
+      var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+      o.type='sine';o.frequency.value=base*mult;o.connect(g);g.connect(master);
+      var st=t0+off,peak=0.5*pg[i];
+      g.gain.setValueAtTime(0.0001,st);
+      g.gain.exponentialRampToValueAtTime(peak,st+0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001,st+1.5);
+      o.start(st);o.stop(st+1.6);
+    });
   });
 }
+function beep(){bell();}
 function checkAlarm(){
   if(!prefs.alarm||!active.runningSince||active.idx>=tasks.length)return;
   var tgt=tasks[active.idx].target*60;
@@ -949,7 +960,7 @@ function checkAlarm(){
 function togglePref(k){
   prefs[k]=!prefs[k];savePrefs();renderPrefs();
   if(k==='wakeLock'){if(prefs.wakeLock&&active.runningSince)acquireWake();else if(!prefs.wakeLock)releaseWake();}
-  if(k==='alarm'&&prefs.alarm)initAudio();
+  if(k==='alarm'&&prefs.alarm){initAudio();bell();}
 }
 function renderPrefs(){
   var w=document.getElementById('swWake'),a=document.getElementById('swAlarm');
