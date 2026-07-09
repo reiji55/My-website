@@ -245,6 +245,15 @@ tr:last-child td{border-bottom:none}
 .sw.on{background:var(--ai)}
 .sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
 .sw.on::after{transform:translateX(20px)}
+/* 3段階スイッチ（アラーム）：既存のsw（丸スイッチ）と同じ見た目で、丸の位置とその中の数字で状態を示す */
+.sw3{width:84px;height:30px;border-radius:20px;background:var(--cardline);position:relative;cursor:pointer;flex-shrink:0}
+.sw3-fill{position:absolute;z-index:0;top:3px;left:3px;height:24px;width:0;border-radius:12px;background:var(--ai);transition:width .2s ease}
+.sw3[data-mode="end"] .sw3-fill{width:51px}
+.sw3[data-mode="both"] .sw3-fill{width:78px}
+.sw3-knob{position:absolute;z-index:1;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);
+  transition:transform .2s ease;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ai)}
+.sw3[data-mode="end"] .sw3-knob{transform:translateX(27px)}
+.sw3[data-mode="both"] .sw3-knob{transform:translateX(54px)}
 
 /* ===== タブ ===== */
 nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:rgba(255,255,255,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--cardline);padding-bottom:env(safe-area-inset-bottom);z-index:10}
@@ -370,10 +379,17 @@ html.dark .storage-warn{background:#2A2413;border-color:#5A4E22;color:#D8BD6A}
     <button data-theme="dark" onclick="setTheme('dark')">ダーク</button>
   </div>
   <p class="note" style="margin-top:4px">「自動」は端末の設定に追従します。</p>
-  <h2 class="sec">計測中の動作</h2>
+  <h2 class="sec">画面・アラーム</h2>
   <div class="list" style="padding:2px 16px">
-    <div class="opt-row"><div><div class="ol">スリープさせない</div><div class="od">計測中は画面が消えないようにします</div></div><div class="sw" id="swWake" onclick="togglePref('wakeLock')"></div></div>
-    <div class="opt-row" style="border-bottom:none"><div><div class="ol">目標超過でアラーム</div><div class="od">各工程が目標を超えたらベルで知らせます（消音モードでも鳴ります）。タップで試聴。</div></div><div class="sw" id="swAlarm" onclick="togglePref('alarm')"></div></div>
+    <div class="opt-row"><div><div class="ol">スリープさせない</div><div class="od">このアプリを開いている間、画面が消えないようにします</div></div><div class="sw" id="swWake" onclick="togglePref('wakeLock')"></div></div>
+    <div class="opt-row" style="border-bottom:none">
+      <div><div class="ol">目標到達アラーム</div>
+        <div class="od">丸の位置：切／終了時に1回／中間と終了で2回（中間は目標の半分でポーン、終了はチリン）。消音モードでも鳴ります。タップで試聴。</div></div>
+      <div class="sw3" id="swAlarm" data-mode="off" onclick="cycleAlarmMode()">
+        <span class="sw3-fill"></span>
+        <span class="sw3-knob" id="sw3Knob"></span>
+      </div>
+    </div>
   </div>
   <p class="note" id="wakeHint" style="margin-top:8px"></p>
   <h2 class="sec">目標時間の設定（分）</h2>
@@ -993,15 +1009,23 @@ function switchPane(name){
 document.querySelectorAll('nav button').forEach(function(b){b.onclick=function(){switchPane(b.dataset.pane);};});
 
 /* ---------- 計測中の動作（スリープ防止・アラーム） ---------- */
-var prefs=load('prefs')||{wakeLock:true,alarm:true};
+var prefs=load('prefs')||{};
+if(prefs.wakeLock===undefined)prefs.wakeLock=true;
+// アラーム設定：off=鳴らさない / end=終了時のみ / both=中間+終了。旧版の真偽値から移行。
+if(prefs.alarmMode===undefined)prefs.alarmMode=(prefs.alarm===false?'off':'end');
+delete prefs.alarm;
 function savePrefs(){save('prefs',prefs);}
-var wakeSentinel=null,audioCtx=null,keepAlive=null,alarmNodes=[];
+savePrefs();
+var wakeSentinel=null,wakeReq=false,audioCtx=null,keepAlive=null,alarmNodes=[];
+// アプリを開いている（＝画面が見えている）間は常に画面維持を試みる
+function wakeShouldHold(){return prefs.wakeLock&&document.visibilityState==='visible';}
 function acquireWake(){
-  if(!prefs.wakeLock||!('wakeLock' in navigator))return;
+  if(!wakeShouldHold()||!('wakeLock' in navigator)||wakeSentinel||wakeReq)return;
+  wakeReq=true;
   try{navigator.wakeLock.request('screen').then(function(s){
-    wakeSentinel=s;
-    s.addEventListener('release',function(){wakeSentinel=null;if(active.runningSince&&document.visibilityState==='visible')acquireWake();});
-  },function(){});}catch(e){}
+    wakeReq=false;wakeSentinel=s;
+    s.addEventListener('release',function(){wakeSentinel=null;if(wakeShouldHold())acquireWake();});
+  },function(){wakeReq=false;});}catch(e){wakeReq=false;}
 }
 function releaseWake(){if(wakeSentinel){try{wakeSentinel.release();}catch(e){}wakeSentinel=null;}}
 function initAudio(){
@@ -1037,37 +1061,83 @@ function bellAt(when,track){
   });
 }
 function bell(){if(audioCtx)bellAt(audioCtx.currentTime,false);}
+// 中間アラーム：やわらかい「ポーン」（終了のチリンと聞き分けられる別音）
+function ponAt(when,track){
+  if(!audioCtx)return;
+  var comp=audioCtx.createDynamicsCompressor();comp.connect(audioCtx.destination);
+  var master=audioCtx.createGain();master.gain.value=0.9;master.connect(comp);
+  var base=784,partials=[1,2,3.01],pg=[1,0.4,0.16];   // やわらかい単発トーン
+  partials.forEach(function(mult,i){
+    var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type='sine';o.frequency.value=base*mult;o.connect(g);g.connect(master);
+    var st=when,peak=0.6*pg[i];
+    g.gain.setValueAtTime(0.0001,st);
+    g.gain.exponentialRampToValueAtTime(peak,st+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,st+1.35);
+    o.start(st);o.stop(st+1.45);
+    if(track)alarmNodes.push(o);
+  });
+}
+function pon(){if(audioCtx)ponAt(audioCtx.currentTime,false);}
 function cancelScheduledAlarm(){alarmNodes.forEach(function(o){try{o.stop();}catch(e){}});alarmNodes=[];}
 // 目標到達時刻に音声クロック上でアラームを予約（画面消灯に強い）
 function scheduleAlarm(){
   cancelScheduledAlarm();
-  if(!prefs.alarm||!audioCtx||!active.runningSince||active.idx>=tasks.length)return;
-  var tgt=tasks[active.idx].target*60,rem=tgt-curTaskSec();
-  if(tgt>0&&rem>0)bellAt(audioCtx.currentTime+rem,true);
+  if(prefs.alarmMode==='off'||!audioCtx||!active.runningSince||active.idx>=tasks.length)return;
+  var tgt=tasks[active.idx].target*60,cur=curTaskSec();
+  if(tgt<=0)return;
+  var rem=tgt-cur;
+  if(rem>0)bellAt(audioCtx.currentTime+rem,true);          // 終了時（チリン）
+  if(prefs.alarmMode==='both'){                             // 中間（ポーン）＝目標の半分
+    var remHalf=tgt/2-cur;
+    if(remHalf>0)ponAt(audioCtx.currentTime+remHalf,true);
+  }
 }
 function togglePref(k){
   prefs[k]=!prefs[k];savePrefs();renderPrefs();
-  if(k==='wakeLock'){if(prefs.wakeLock&&active.runningSince)acquireWake();else if(!prefs.wakeLock)releaseWake();}
-  if(k==='alarm'){if(prefs.alarm){initAudio();bell();scheduleAlarm();}else cancelScheduledAlarm();}
+  if(k==='wakeLock'){if(prefs.wakeLock)acquireWake();else releaseWake();}
+}
+// アラームの3段階切替（off / end / both）
+function setAlarmMode(mode){
+  prefs.alarmMode=mode;savePrefs();renderPrefs();
+  if(mode==='off'){cancelScheduledAlarm();return;}
+  initAudio();
+  if(mode==='end'){bell();}                                 // 終了音を試聴
+  else{pon();if(audioCtx)bellAt(audioCtx.currentTime+0.9,false);} // 中間→終了を続けて試聴
+  scheduleAlarm();
+}
+// トグルはどこをタップしても反応し、タップするたびに 切 → 1回 → 2回 → 切 … と順に進む
+function cycleAlarmMode(){
+  var order=['off','end','both'];
+  var next=order[(order.indexOf(prefs.alarmMode)+1)%order.length];
+  setAlarmMode(next);
 }
 function renderPrefs(){
-  var w=document.getElementById('swWake'),a=document.getElementById('swAlarm'),h=document.getElementById('wakeHint');
+  var w=document.getElementById('swWake'),a=document.getElementById('swAlarm'),k=document.getElementById('sw3Knob'),h=document.getElementById('wakeHint');
   if(w)w.classList.toggle('on',prefs.wakeLock);
-  if(a)a.classList.toggle('on',prefs.alarm);
+  if(a)a.setAttribute('data-mode',prefs.alarmMode);
+  if(k)k.textContent=prefs.alarmMode==='off'?'':(prefs.alarmMode==='end'?'1':'2');
   if(h){
     var sup=('wakeLock' in navigator);
-    h.innerHTML='確実にスリープを防ぐには、端末側で <b>設定 → 画面表示と明るさ → 自動ロック →「なし」</b> にするのが最も確実です（低電力モードはオフに）。'
-      +(sup?'':'<br>※お使いのブラウザはアプリからの画面維持に対応していないため、上記の端末設定が必要です。');
+    h.innerHTML=(sup?'':'※お使いのブラウザはこの機能に未対応です。端末側で <b>設定 → 画面表示と明るさ → 自動ロック →「なし」</b> にしてください。<br>')
+      +'※iPhoneの<b>低電力モード</b>がオンのときは、OS側の制限で画面が消えることがあります（低電力モードをオフに）。';
   }
 }
 
 /* ---------- 起動 ---------- */
 buildPhaseSelect();renderRunFull();renderPrefs();
-setInterval(function(){if(active.runningSince){renderFuda();updateTotals();}},500);
+acquireWake();                        // 起動＝アプリを開いた時点で画面維持を取得
+setInterval(function(){
+  if(active.runningSince){renderFuda();updateTotals();}
+  acquireWake();                      // 解放された場合の取りこぼし対策として定期的に再取得
+},500);
+window.addEventListener('focus',acquireWake);
+window.addEventListener('pageshow',acquireWake);
+document.addEventListener('pointerdown',acquireWake);  // 端末が要求する「ユーザー操作」も兼ねる
 document.addEventListener('visibilitychange',function(){
   if(document.visibilityState==='visible'){
-    renderFuda();updateTotals();
-    if(active.runningSince){acquireWake();if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();scheduleAlarm();}
+    renderFuda();updateTotals();acquireWake();
+    if(active.runningSince){if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume();scheduleAlarm();}
   }
   persistActive();
 });
