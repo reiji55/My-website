@@ -21,7 +21,7 @@
   --bg:#F1EFE8; --card:#FFFFFF; --cardline:#E7E4DB; --hair:#F0EEE7;
   --ai:#24486E; --ai-g1:#2A537C; --ai-g2:#1F3E63; --ai-soft:#EAF0F7;
   --ink:#1D2530; --sub:#7C8290; --sub2:#9AA0AA;
-  --under:#3D7B5C; --under-soft:#E4EFE9; --over:#B24A3E;
+  --under:#3D7B5C; --under-soft:#E4EFE9; --over:#B24A3E; --warn:#B7791A;
   --gold:#B99A5E; --gold-d:#9A7B12; --tab:#A6A296;
   --sans:"Noto Sans JP","Hiragino Sans",-apple-system,sans-serif;
   --serif:"Noto Serif JP","Hiragino Mincho ProN",serif;
@@ -66,8 +66,12 @@ header h1{font-size:.94rem;font-weight:700;letter-spacing:.04em;line-height:1.3;
 .b-done,.b-start{background:var(--ai);color:#fff;box-shadow:0 8px 18px -8px rgba(36,72,110,.7)}
 .b-pause,.b-skip{background:#fff;color:var(--ai);border:1.5px solid var(--cardline)!important}
 
-.total-line{display:flex;justify-content:space-between;align-items:baseline;padding:14px 4px 8px;font-size:.8rem;color:var(--sub);font-weight:500}
-.total-line b{font-size:1rem;color:var(--ink);font-weight:700}
+.total-line{display:flex;flex-wrap:wrap;gap:5px 16px;align-items:baseline;padding:14px 4px 8px;font-size:.78rem;color:var(--sub);font-weight:500}
+.total-line b{font-size:.92rem;color:var(--ink);font-weight:700}
+.tl-remain.warn,.tl-remain.warn b{color:var(--warn)}
+.tl-remain.over,.tl-remain.over b{color:var(--over)}
+.tl-elapsed.ok,.tl-elapsed.ok b{color:var(--under)}
+.tl-elapsed.ng,.tl-elapsed.ng b{color:var(--over)}
 
 /* ===== 工程一覧 ===== */
 .list{background:var(--card);border:1px solid var(--cardline);border-radius:18px;overflow:hidden;box-shadow:var(--shadow)}
@@ -76,8 +80,9 @@ header h1{font-size:.94rem;font-weight:700;letter-spacing:.04em;line-height:1.3;
 .row .no{font-family:var(--serif);color:var(--sub2);font-size:.95rem;font-weight:600}
 .row .nm{font-weight:500;color:var(--ink)}
 .row .memo-dot{color:var(--ai);font-size:.72rem;margin-left:5px}
-.row .tm{text-align:right;font-size:.82rem;color:var(--sub);font-weight:500}
+.row .tm{text-align:right;font-size:.82rem;color:var(--sub);font-weight:500;display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.3}
 .row .tm b{color:var(--ink);font-weight:700}
+.row .tm-cum{font-size:.68rem;font-weight:600;opacity:.9}
 .row.done .nm{color:var(--sub)}
 .row .diff-ok{color:var(--under);font-weight:700}
 .row .diff-ng{color:var(--over);font-weight:700}
@@ -297,7 +302,7 @@ html.dark{
   --bg:#14161B; --card:#1E222A; --cardline:#2D333D; --hair:#272D36;
   --ai:#6E9BD6; --ai-soft:#1B2A3E;
   --ink:#E8EBEF; --sub:#9BA1AB; --sub2:#7E848E;
-  --under:#5FC08C; --under-soft:#182C22; --over:#EB8A7E;
+  --under:#5FC08C; --under-soft:#182C22; --over:#EB8A7E; --warn:#E3B341;
   --gold:#C7A968; --gold-d:#D8BD6A; --tab:#868C96;
   --shadow:0 14px 30px -18px rgba(0,0,0,.6);
 }
@@ -331,8 +336,10 @@ html.dark .storage-warn{background:#2A2413;border-color:#5A4E22;color:#D8BD6A}
   <div class="run-meta" id="hdrKai"></div>
   <div class="fuda" id="fuda"></div>
   <div class="total-line">
-    <span>全体経過 <b class="mono" id="totalClock">0:00</b></span>
-    <span>目標合計 <b class="mono" id="totalTarget"></b></span>
+    <span class="tl-elapsed" id="totalClockWrap">全体経過 <b class="mono" id="totalClock">0:00</b></span>
+    <span class="tl-remain" id="totalRemainWrap">残り <b class="mono" id="totalRemain">—</b></span>
+    <span>積算目標 <b class="mono" id="cumTgtNow">—</b></span>
+    <span>Total <b class="mono" id="totalTarget"></b></span>
   </div>
   <div class="list" id="taskList"></div>
   <div class="hint">工程名をタップすると、その工程だけ練習できます</div>
@@ -557,12 +564,14 @@ function renderFuda(){
     +btns;
 }
 function renderList(){
-  var html='';
+  var html='',cumA=0,cumT=0;
   tasks.forEach(function(t,i){
     var r=active.records[i],cls='',tm='';
     if(i===active.idx&&active.idx<tasks.length){cls='now';tm=inProgress()?'<b class="live">実施中</b>':'<b>選択中</b>';}
     else if(r!=null){cls='done';var d=r-t.target*60;
-      tm='<b class="mono">'+fmt(r)+'</b> <span class="'+(d<=0?'diff-ok':'diff-ng')+'">('+(d<=0?'−':'+')+fmt(Math.abs(d))+')</span>';}
+      cumA+=r;cumT+=t.target*60;var od=cumA-cumT; // 実施済みの工程だけで積算を比較
+      tm='<span class="tm-main"><b class="mono">'+fmt(r)+'</b> <span class="'+(d<=0?'diff-ok':'diff-ng')+'">('+(d<=0?'−':'+')+fmt(Math.abs(d))+')</span></span>'
+        +'<span class="tm-cum '+(od<=0?'diff-ok':'diff-ng')+'">積算 '+(od<=0?'−':'+')+fmt(Math.abs(od))+'</span>';}
     else tm=(t.target>0?t.target+'分':'—')+' ／ 積算'+cum(i)+'分';
     var dot=(active.recordMemos[i]&&active.recordMemos[i].trim())?'<span class="memo-dot">✎</span>':'';
     html+='<div class="row '+cls+'" onclick="selectPhase('+i+')"><span class="no serif">'+CIRCLED[i]+'</span>'
@@ -570,9 +579,27 @@ function renderList(){
   });
   listEl.innerHTML=html;
 }
+var FIRST_HALF_SEC=7200; // 試験前半の区切り（2時間）
 function updateTotals(){
-  document.getElementById('totalClock').textContent=hms(totalSec());
-  document.getElementById('totalTarget').textContent=hms(cum(tasks.length-1)*60);
+  var elapsed=totalSec(),targetTotal=cum(tasks.length-1)*60,remain=targetTotal-elapsed;
+  document.getElementById('totalClock').textContent=hms(elapsed);
+  document.getElementById('totalTarget').textContent=hms(targetTotal);
+  // 積算目標：今の工程までの目標合計（固定値・色分けなし）
+  var cumTgtNow=(active.idx<tasks.length?cum(active.idx):cum(tasks.length-1))*60;
+  document.getElementById('cumTgtNow').textContent=hms(cumTgtNow);
+  // 全体経過の色：積算目標に収まっていれば緑、超えていれば赤
+  var ecWrap=document.getElementById('totalClockWrap');
+  if(ecWrap){
+    ecWrap.classList.toggle('ok',elapsed<=cumTgtNow);
+    ecWrap.classList.toggle('ng',elapsed>cumTgtNow);
+  }
+  var rEl=document.getElementById('totalRemain'),wrap=document.getElementById('totalRemainWrap');
+  if(rEl&&wrap){
+    if(remain>=0){wrap.firstChild.textContent='残り ';rEl.textContent=hms(remain);}
+    else{wrap.firstChild.textContent='超過 ';rEl.textContent='+'+hms(-remain);}
+    wrap.classList.toggle('over',remain<0);
+    wrap.classList.toggle('warn',remain>=0&&elapsed>=FIRST_HALF_SEC); // 2時間経過で黄色
+  }
   document.getElementById('hdrKai').textContent='第'+(sessions.length+1)+'回 ・ '+today();
 }
 function syncMemos(){
