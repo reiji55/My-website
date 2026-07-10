@@ -2,7 +2,7 @@
    - アプリ本体はネット優先＋オフライン時キャッシュ（更新が確実に届く）
    - フォント等はキャッシュ優先（オフラインでも表示）
    ※ アプリを更新したら下の VERSION を上げてください（例: v2 → v3）。 */
-const VERSION = 'jitsugi-timer-v12';
+const VERSION = 'jitsugi-timer-v13';
 const CORE = [
   './',
   './index.html',
