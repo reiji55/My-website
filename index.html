@@ -582,16 +582,19 @@ function renderList(){
 var FIRST_HALF_SEC=7200; // 試験前半の区切り（2時間）
 function updateTotals(){
   var elapsed=totalSec(),targetTotal=cum(tasks.length-1)*60,remain=targetTotal-elapsed;
+  // 積算目標＝実際に取り組んだ（記録済みの）工程だけの目標合計。工程の選択操作では変化しない。
+  var doneTgt=0,doneAct=0,hasDone=false;
+  tasks.forEach(function(t,i){
+    if(active.records[i]!=null){doneTgt+=t.target*60;doneAct+=active.records[i];hasDone=true;}
+  });
   document.getElementById('totalClock').textContent=hms(elapsed);
   document.getElementById('totalTarget').textContent=hms(targetTotal);
-  // 積算目標：今の工程までの目標合計（固定値・色分けなし）
-  var cumTgtNow=(active.idx<tasks.length?cum(active.idx):cum(tasks.length-1))*60;
-  document.getElementById('cumTgtNow').textContent=hms(cumTgtNow);
-  // 全体経過の色：積算目標に収まっていれば緑、超えていれば赤
+  document.getElementById('cumTgtNow').textContent=hasDone?hms(doneTgt):'—';
+  // 全体経過の色：記録済み工程の実績が積算目標に収まれば緑・超えれば赤（進行中の秒数では変化させない）
   var ecWrap=document.getElementById('totalClockWrap');
   if(ecWrap){
-    ecWrap.classList.toggle('ok',elapsed<=cumTgtNow);
-    ecWrap.classList.toggle('ng',elapsed>cumTgtNow);
+    ecWrap.classList.toggle('ok',hasDone&&doneAct<=doneTgt);
+    ecWrap.classList.toggle('ng',hasDone&&doneAct>doneTgt);
   }
   var rEl=document.getElementById('totalRemain'),wrap=document.getElementById('totalRemainWrap');
   if(rEl&&wrap){
